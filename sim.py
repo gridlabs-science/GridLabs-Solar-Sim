@@ -1,6 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import plotly.graph_objects as go  # Import Plotly's graph objects library
+
 
 
 def process_solar_data(file_path):
@@ -178,3 +180,23 @@ plt.title("Capacitor Discharge Simulation with Response Times and Power Modes")
 plt.legend()
 plt.grid(True)
 plt.show()
+
+#Plotly version instead
+import plotly.graph_objects as go  # Import Plotly's graph objects library
+
+# Create the Plotly figure
+fig = go.Figure()
+
+# Add the trace for the capacitor voltage
+fig.add_trace(go.Scatter(x=time, y=voltage, name="Capacitor Voltage"))
+
+# Set up the layout with labels, title, and grid
+fig.update_layout(
+    xaxis_title="Time (s)",
+    yaxis_title="Voltage (V)",
+    title="Capacitor Discharge Simulation with Response Times and Power Modes",
+    showlegend=True
+)
+
+# Display the interactive chart
+fig.show()
