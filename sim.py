@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go  # Import Plotly's graph objects library
+from plotly.subplots import make_subplots
 
 
 
@@ -155,6 +156,15 @@ eta = eta1  #picking one of them.  Feel free to change this to eta2 or an averag
 print ("eta1 = " + str(eta1))
 print ("eta2 = " + str(eta2))
 Pmax = Vmp * Imp
+
+# Create an empty NumPy array to store results
+powerCurve = np.zeros(int((Voc / 0.1) + 1))
+currentCurve = np.zeros(int((Voc / 0.1) + 1))
+# Loop through voltages and call the function
+for i, voltage in enumerate(np.arange(0, Voc + 0.1, 0.1)):
+  currentCurve[i] = panel_output(voltage, 1000)
+  powerCurve[i] = currentCurve[i] * voltage
+
 print("-----------------")
 
 # Read in the real solar data and process into irradiance data
@@ -172,28 +182,21 @@ print(f"Power output at {target_time} seconds: {irr_at_time:.2f}")
 
 time, voltage = capacitor_discharge(C, V, vt1, vt2, HPW, LPW)
 
-# Plot the results
-plt.plot(time, voltage, label="Capacitor Voltage")
-plt.xlabel("Time (s)")
-plt.ylabel("Voltage (V)")
-plt.title("Capacitor Discharge Simulation with Response Times and Power Modes")
-plt.legend()
-plt.grid(True)
-plt.show()
 
-#Plotly version instead
-import plotly.graph_objects as go  # Import Plotly's graph objects library
-
+fig = make_subplots(rows=2, cols=2)
 # Create the Plotly figure
-fig = go.Figure()
+#fig = go.Figure()
 
 # Add the trace for the capacitor voltage
-fig.add_trace(go.Scatter(x=time, y=voltage, name="Capacitor Voltage"))
+fig.add_trace(go.Scatter(x=processed_data['last_changed'], y=processed_data['state'], name="Real world irradiance data"), row=2, col=1)
+fig.add_trace(go.Scatter(x=time, y=voltage, name="Capacitor Voltage"), row=1, col=2)
+fig.add_trace(go.Scatter(x=np.arange(0, Voc + 0.1, 0.1), y=powerCurve, name="Panel Power Curve"), row=1, col=1)
+
 
 # Set up the layout with labels, title, and grid
 fig.update_layout(
-    xaxis_title="Time (s)",
-    yaxis_title="Voltage (V)",
+    #xaxis_title="Time (s)",
+    #yaxis_title="Voltage (V)",
     title="Capacitor Discharge Simulation with Response Times and Power Modes",
     showlegend=True
 )
