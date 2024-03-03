@@ -30,3 +30,11 @@ class panel:
             return 0
         else:
             return amps
+    
+    def get_irradiance(self, V, I):
+        maxCurrent = self.panel_output(V, 1000) #what should the current be IF the irradiance were perfect 1000
+        irr = 1000
+        #Now do the reverse algebra of the equations in 'panel_output'
+        #TODO: this math...
+
+        return irr
