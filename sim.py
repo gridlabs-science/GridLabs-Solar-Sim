@@ -94,16 +94,16 @@ def stress_test(C, V, t1, t2, HPW, LPW):
 
   # Simulate discharge with response times and power modes
   for i in range(1, len(time)):
-    if time[i] <= segmentTime:
-      # Discharge in high power mode
-      voltage[i] = voltage[i - 1] - (HPW * dt) / (C * voltage[i - 1])
-    #elif time[i] <= segmentTime*2:
-      # Transition from high to low power mode (linear ramp)
+    if time[i] <= segmentTime:                                          # Segment 0, stabilize at full 1000 irr, full power
+      #voltage[i] = voltage[i - 1] - (HPW * dt) / (C * voltage[i - 1])
+      test = 0
+    elif time[i] <= segmentTime*2:                                      # Segment 1, full power loss, 0 irr.  Begin discharge, ASIC should cycle into sleep mode.
+      test = 0
     #  power_draw = HPW - (HPW - LPW) * (time[i] - t1) / t2
     #  voltage[i] = voltage[i - 1] - (power_draw * dt) / (F * voltage[i - 1])
-    else:
-      # Discharge in low power mode
-      voltage[i] = voltage[i - 1] - (LPW * dt) / (C * voltage[i - 1])
+    else:                                                               # Segment 2, full power returns 1000 irr, ASIC reboots, observe power ramp up.
+      test = 0
+      #voltage[i] = voltage[i - 1] - (LPW * dt) / (C * voltage[i - 1])
 
   return time, voltage
 
