@@ -1,3 +1,5 @@
+import math
+
 class panel:
     def __init__(self, Voc, Vmp, Isc, Imp, maxPower):
         self.Voc = Voc
@@ -19,6 +21,7 @@ class panel:
         #The following equations are taken from this paper:  https://oa.upm.es/43747/1/PindadoRE20016.pdf
         if(PV < self.Vmp):
             amps = self.Isc * (1 - (1 - (self.Imp/self.Isc)) * (PV/self.Vmp)**(self.Imp/(self.Isc-self.Imp)))
+            if math.isnan(amps): amps = 0   #print("grr arg " + str(PV/self.Imp))
         else:
             amps = self.Imp * (self.Vmp/PV) * (1 - ((PV-self.Vmp) / (self.Voc-self.Vmp))**self.eta) 
 
@@ -31,7 +34,7 @@ class panel:
         else:
             return amps
     
-    def get_irradiance(self, V, I):
+    def get_irradiance(self, I, V):
         maxCurrent = self.panel_output(V, 1000) #what should the current be at that panel voltage IF the irradiance were perfect 1000
         irr = I / maxCurrent * 1000
         return irr

@@ -64,75 +64,80 @@ def get_irr_at_time(df, target_time):
 
 
 
-def stress_test(C, V, t1, t2, HPW, LPW):
-  """
-  Simulates the discharge of a capacitor powering a computer with high and low power modes and response times.
-
-  Args:
-      F: Capacitor size in Farads.
-      V: Initial capacitor voltage.
-      t1: Low power response time in seconds.
-      t2: High power response time in seconds.
-      HPW: High power draw of the computer in watts.
-      LPW: Low power draw of the computer in watts.
-
-  Returns:
-      A tuple containing:
-          time: A list of time points in seconds.
-          voltage: A list of capacitor voltages at each time point.
-  """
-
-  # Calculate time constant
-  #tau = C * V / HPW
-
-  # Define time steps
-  dt = 0.01  # Adjust as needed for accuracy
+def stress_test(solarPanel, Bitaxe, dt, highIRR, lowIRR, segmentTime):
   time = np.arange(0, 3 * segmentTime, dt)
+  voltage =  np.ones_like(time)     # Initialize voltage
+  panelPower = np.ones_like(time)
+  ASICPower = np.ones_like(time)
+  ASICState = np.ones_like(time)
+  voltage[0] = Bitaxe.lastPanelVoltage  # really the capacitor voltage, but same thing
+  panelPower[0] = voltage[0] * solarPanel.panel_output(voltage[0], highIRR)
+  ASICPower[0] = Bitaxe.lastPower      # Initialize the ASIC power
+  ASICState[0] = '3'
+  print("voltage[0] = " + str(voltage[0]) + " /  panelPower[0] = " + str(panelPower[0]))
+  for i in range(1, len(time)):        # Determine irradiance based on simulation time
+    irr = 0
+    if time[i] <= segmentTime:                                          # Segment 0, stabilize at full irr, full power
+      irr = highIRR
+    elif time[i] <= segmentTime*2:                                      # Segment 1, full power loss, min irr.  Begin discharge, ASIC should cycle into sleep mode.
+      irr = lowIRR    
+    else:                                                               # Segment 2, full power returns max irr, ASIC reboots, observe power ramp up.
+      irr = highIRR
+      
+    # Based on the new irradiance, get the panel power output
+    panelAmps = solarPanel.panel_output(voltage[i-1], irr)  #gets the current output (in amps)
+    panelPower[i] = panelAmps * voltage[i-1]
 
-  # Initialize voltage
-  voltage = V * np.ones_like(time)
 
-  # Simulate discharge with response times and power modes
-  for i in range(1, len(time)):
-    if time[i] <= segmentTime:                                          # Segment 0, stabilize at full 1000 irr, full power
-      #voltage[i] = voltage[i - 1] - (HPW * dt) / (C * voltage[i - 1])
-      test = 0
-    elif time[i] <= segmentTime*2:                                      # Segment 1, full power loss, 0 irr.  Begin discharge, ASIC should cycle into sleep mode.
-      test = 0
-    #  power_draw = HPW - (HPW - LPW) * (time[i] - t1) / t2
-    #  voltage[i] = voltage[i - 1] - (power_draw * dt) / (F * voltage[i - 1])
-    else:                                                               # Segment 2, full power returns 1000 irr, ASIC reboots, observe power ramp up.
-      test = 0
-      #voltage[i] = voltage[i - 1] - (LPW * dt) / (C * voltage[i - 1])
+    # Use Panel output and ASIC last power setting and dt to run the sim forward one step and get the new capacitor/panel voltage
+    deltaWatts = panelPower[i-1] - ASICPower[i-1]  # Find the power delta between what the panel is producing and what the ASIC is pulling
+    voltage[i] = voltage[i - 1] - (-deltaWatts * dt) / (Bitaxe.capacitorSize * voltage[i - 1]) 
+   
+    # Now let the ASIC state machine update and calculate it's new power draw
+    ASICPower[i] = Bitaxe.get_power(voltage[i], dt, solarPanel)
+    if Bitaxe.state == 'running': ASICState[i] = 3
+    if Bitaxe.state == 'curtailing': ASICState[i] = 2
+    if Bitaxe.state == 'booting': ASICState[i] = 1
+    if Bitaxe.state == 'curtailed': ASICState[i] = 0
 
-  return time, voltage
+    if ASICPower[i] > Bitaxe.maxPower: break
+    if i > 2/dt: break
+
+  return time, voltage, panelPower, ASICPower, ASICState
 
 # Other system variables
-DCDCeff = .87 # Efficiency of DC to DC converter.  85-95% is typically, depending on stepdown voltage (lower stepdown gives better efficiency)
-C = 10.0  # Farads, capacitor size
-V = 12.0  # Volts, nominal capacitor voltage (max)
-vt1 = 1.0  # stage 1 power reduction voltage trigger
-vt2 = 2.0  # High power response time (seconds)
-HPW = 300.0  # High power draw (watts)
-LPW = 5.0 # Low power draw (watts)
-
-# Simulation variables
-dt = 0.01  # Seconds per step in the simulation.  Adjust as needed for speed and accuracy
-#Stress Test irradiance pattern.  It simply starts high for segmentTime, goes low for segmentTime, then back high for segmentTime
-hiIRR = 1000   # Maximum irradiance, in watts / m^2
-lowIRR = 0     # Minimum irradiance (0 = total solar eclipse, 200 typical overcast day)
-segmentTime = 60   # amount of time to spend at lowIRR (in seconds)
+#DCDCeff = .87 # Efficiency of DC to DC converter.  85-95% is typically, depending on stepdown voltage (lower stepdown gives better efficiency)
+#C = 10.0  # Farads, capacitor size
+#V = 12.0  # Volts, nominal capacitor voltage (max)
+#vt1 = 1.0  # stage 1 power reduction voltage trigger
+#vt2 = 2.0  # High power response time (seconds)
+#HPW = 300.0  # High power draw (watts)
+#LPW = 5.0 # Low power draw (watts)
 
 # Solar Panel Electrical Characteristics 
-solarPanel = panel.panel(Voc=49.6, Vmp=41.64, Isc=13.86, Imp=12.97, maxPower=540.0)
+#solarPanel = panel.panel(Voc=49.6, Vmp=41.64, Isc=13.86, Imp=12.97, maxPower=540.0)   # My big panels
+solarPanel = panel.panel(Voc=21.6, Vmp=18.0, Isc=6.12, Imp=5.6, maxPower=100.0)    # Ben's small 100W one
+
+# Create the load object
+# def __init__(self, pwrScaleUpSpeed, pwrScaleDownSpeed, curtailDelay, bootDelay, maxPower, minPower, capacitorSize, initialPanelVoltage, targetDecrement):
+Bitaxe = dynamicLoad.dynamicLoad(pwrScaleUpSpeed=1, pwrScaleDownSpeed=1, curtailDelay=1, bootDelay=60, maxPower=15, minPower=4, capacitorSize=1, initialPanelVoltage=solarPanel.Vmp, targetDecrement=0.9)
 
 # Calculate the panel's current/voltage curves
 powerCurve = np.zeros(int((solarPanel.Voc / 0.01) + 1))
 currentCurve = np.zeros(int((solarPanel.Voc / 0.01) + 1))
 # Loop through voltages and call the function
-for i, voltage in enumerate(np.arange(0, solarPanel.Voc + 0.01, 0.01)):
+for i, voltage in enumerate(np.arange(0, solarPanel.Voc + 0.0, 0.01)):
   currentCurve[i] = solarPanel.panel_output(voltage, 1000)
   powerCurve[i] = currentCurve[i] * voltage
+
+# Run the short "stress test" of full on / full off power to observe basic system response
+    # Simulation variables
+dt = 0.01  # Seconds per step in the simulation.  Adjust as needed for speed and accuracy
+    # Stress Test irradiance pattern.  It simply starts high for segmentTime, goes low for segmentTime, then back high for segmentTime
+highIRR = 1000   # Maximum irradiance, in watts / m^2
+lowIRR = 0     # Minimum irradiance (0 = total solar eclipse, 200 typical overcast day)
+segmentTime = 60   # amount of time to spend at lowIRR (in seconds)
+time, voltage, panelPower, ASICPower, ASICState = stress_test(solarPanel, Bitaxe, dt, highIRR, lowIRR, segmentTime)
 
 # Read in the real solar data and process into irradiance data
 data_file = str("data/West_roof.csv")  # Replace with the path to your CSV file
@@ -142,15 +147,18 @@ processed_data = process_solar_data(data_file)
 target_time = 100
 irr_at_time = get_irr_at_time(processed_data, target_time)
 
-time, voltage = stress_test(C, V, vt1, vt2, HPW, LPW)
 
-fig = make_subplots(rows=2, cols=2, specs=[[{"secondary_y": True}, {}], [{},{}]])
+
+fig = make_subplots(rows=2, cols=2, specs=[[{"secondary_y": True}, {"secondary_y": True}], [{"secondary_y": True},{"secondary_y": True}]])
 # Create the Plotly figure
 #fig = go.Figure()
 
 # Add the trace for the capacitor voltage
 fig.add_trace(go.Scatter(x=processed_data['last_changed'], y=processed_data['state'], name="Real world irradiance data"), row=2, col=1)
-fig.add_trace(go.Scatter(x=time, y=voltage, name="Capacitor Voltage"), row=1, col=2)
+fig.add_trace(go.Scatter(x=time, y=voltage, name="Capacitor/Panel Voltage"), row=1, col=2, secondary_y=False)
+fig.add_trace(go.Scatter(x=time, y=panelPower, name="Solar Power"), row=1, col=2, secondary_y=True)
+fig.add_trace(go.Scatter(x=time, y=ASICPower, name="ASIC Power"), row=1, col=2, secondary_y=True)
+fig.add_trace(go.Scatter(x=time, y=ASICState, name="ASIC state"), row=1, col=2, secondary_y=True)
 fig.add_trace(go.Scatter(x=np.arange(0, solarPanel.Voc + 0.01, 0.01), y=powerCurve, name="Panel Power Curve"), row=1, col=1, secondary_y=False)
 fig.add_trace(go.Scatter(x=np.arange(0, solarPanel.Voc + 0.01, 0.01), y=currentCurve, name="Panel Current Curve"), row=1, col=1, secondary_y=True)
 

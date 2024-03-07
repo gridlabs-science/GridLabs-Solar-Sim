@@ -20,6 +20,7 @@ class dynamicLoad:
         self.target = maxPower
         self.state = 'running' # also 'curtailed', 'curtailing', and 'booting' (given delay between command and power reduction)
         self.curtailTime = 0 # the time since the "curtail" command was given.  Used for the curtail delay logic
+        self.bootTime = 0    # the time since the "boot" command was given.  Used for the boot delay logic, i.e. time between boot and power on hashing.
         self.lastPanelVoltage = initialPanelVoltage
         #self.lastCapVoltage = initialCapVoltage
         self.lastPower = self.target
@@ -32,17 +33,23 @@ class dynamicLoad:
 
         #Next, calculate the average power coming from the panel
         avgCapVolts = (panelVoltage + self.lastPanelVoltage)/2
-        avgPanelPower = self.lastPower + capAmps * avgCapVolts
+        #avgPanelPower = capAmps * avgCapVolts + self.lastPower
+        capPower = (0.5 * self.capacitorSize * (panelVoltage - self.lastPanelVoltage)**2) / dt
+        if panelVoltage < self.lastPanelVoltage: capPower = -1 * capPower
+        avgPanelPower = self.lastPower + capPower
 
         #Calculate panel irradiance based on its power output and panel voltage
         avgPanelCurrent = avgPanelPower / avgCapVolts
         irr = solarPanel.get_irradiance(avgPanelCurrent, avgCapVolts)  #returns an estimate for the panel irradiance.  Max is 1000 W/m^2
         
         #Calculate the max power available, if panel was at MPP, given current irradiance:
-        powerAvailable = solarPanel.panel_output(solarPanel.Vmp, irr)
+        powerAvailable = solarPanel.Vmp * solarPanel.panel_output(solarPanel.Vmp, irr)
+        print("power available = " + str(powerAvailable) + "  /  irr = " + str(irr) + " / avgI = " + str(avgPanelCurrent) + " / avgPanelPower = " + str(avgPanelPower))
+        print("             capAmps " + str(capAmps) + " | capPower " + str(capPower))
 
         #Update target power to equal the incoming panel power, adjusted for buffer decrement.  1.0 = MPPT.  < 1 gives a buffer to deal with reaction delays.
         self.target = powerAvailable * self.targetDecrement
+        if(self.target > self.maxPower): self.target = self.maxPower
 
         # State machine logic
         if self.state == 'curtailing':  # So we already began the process of shutting down
@@ -51,22 +58,33 @@ class dynamicLoad:
                 self.curtailTime = 0
                 self.state = 'curtailed'
                 self.lastPower = 0
-        if self.state == 'booting':
-            self.curtailTime = self.curtailTime + dt
-            if self.curtailTime >= self.bootDelay:  #We've fully booted, so start the ASIC at min power
-                self.curtailTime = 0
+        elif self.state == 'booting':
+            self.bootTime = self.bootTime + dt
+            if self.bootTime >= self.bootDelay:  #We've fully booted, so start the ASIC at min power
+                self.bootTime = 0
                 self.state = 'running'
                 self.lastPower = self.minPower
+        elif self.state == 'curtailed':
+            if self.target > self.minPower and panelVoltage > solarPanel.Vmp:  #Panel is now producing more than min power. Wait until the capacitor is charged enough to push the panel to the right side of Vmp
+                self.state = 'booting'
+                self.bootTime = 0
+            self.lastPower = 0
+        else: #We must be running
+            if self.target < self.minPower: #Curtail, because we can't run slow enough
+                self.state = 'curtailing'
+                self.curtailTime = 0
+            #Logic for slowly scaling the power to chase the target
+            newPower = self.lastPower
+            if self.target <= self.lastPower:  #Target is lower than current power, so scale it back
+                newPower = self.lastPower - self.pwrScaleDownSpeed * dt
+            else:                              # Otherwise, target is higher than current power, so push it up!
+                newPower = self.lastPower + self.pwrScaleUpSpeed * dt
+            self.lastPower = newPower
 
-        if self.target < self.minPower: #Curtail, because we can't run slow enough
-            self.state = 'curtailing'
-            self.curtailTime = 0
-        if self.target > self.minPower:
-            self.target = self.target
+        # Reset all the "last recent value of X" numbers
+        self.lastPanelVoltage = panelVoltage
 
-
-
-        return self.lastPower
+        return self.lastPower   # Finally, return whatever the latest and greatest power draw is.
 
 
 
