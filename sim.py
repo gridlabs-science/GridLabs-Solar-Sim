@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import math
 import plotly.graph_objects as go  # Import Plotly's graph objects library
 from plotly.subplots import make_subplots
 
@@ -86,12 +87,20 @@ def stress_test(solarPanel, Bitaxe, dt, highIRR, lowIRR, segmentTime):
       
     # Based on the new irradiance, get the panel power output
     panelAmps = solarPanel.panel_output(voltage[i-1], irr)  #gets the current output (in amps)
+    print("panelAmps " + str(panelAmps))
     panelPower[i] = panelAmps * voltage[i-1]
-
+    print("panelPower " + str(panelPower[i]))
 
     # Use Panel output and ASIC last power setting and dt to run the sim forward one step and get the new capacitor/panel voltage
     deltaWatts = panelPower[i-1] - ASICPower[i-1]  # Find the power delta between what the panel is producing and what the ASIC is pulling
-    voltage[i] = voltage[i - 1] - (-deltaWatts * dt) / (Bitaxe.capacitorSize * voltage[i - 1]) 
+    print("deltaWatts " + str(deltaWatts))
+    energyChange = abs(deltaWatts * dt)
+    print("energyChange " + str(energyChange))
+    voltage[i] = voltage[i-1] + np.sign(deltaWatts)*math.sqrt(2*energyChange/Bitaxe.capacitorSize)
+    print("voltage[" + str(i) + "] " + str(voltage[i]))
+    
+    #voltage[i] = voltage[i - 1] - (-deltaWatts * dt) / (Bitaxe.capacitorSize * voltage[i - 1]) 
+    #capPower = (0.5 * self.capacitorSize * (panelVoltage - self.lastPanelVoltage)**2) / dt
    
     # Now let the ASIC state machine update and calculate it's new power draw
     ASICPower[i] = Bitaxe.get_power(voltage[i], dt, solarPanel)
@@ -101,7 +110,8 @@ def stress_test(solarPanel, Bitaxe, dt, highIRR, lowIRR, segmentTime):
     if Bitaxe.state == 'curtailed': ASICState[i] = 0
 
     if ASICPower[i] > Bitaxe.maxPower: break
-    if i > 2/dt: break
+    if i > 0.2/dt: break
+    #break
 
   return time, voltage, panelPower, ASICPower, ASICState
 

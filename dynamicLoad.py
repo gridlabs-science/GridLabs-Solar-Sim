@@ -29,23 +29,25 @@ class dynamicLoad:
     def get_power(self, panelVoltage, dt, solarPanel):
         #First, calculate the amps to/from the cap based on the delta in capacitor voltage
         # Increasing voltage means capacitor is charging.  Positive values of 'capAmps' indicate panel power is greater than load power
-        capAmps = (panelVoltage - self.lastPanelVoltage) / (self.capacitorSize * dt)
+        #capAmps = (panelVoltage - self.lastPanelVoltage) / (self.capacitorSize * dt)
 
         #Next, calculate the average power coming from the panel
-        avgCapVolts = (panelVoltage + self.lastPanelVoltage)/2
+        #avgCapVolts = (panelVoltage + self.lastPanelVoltage)/2
         #avgPanelPower = capAmps * avgCapVolts + self.lastPower
-        capPower = (0.5 * self.capacitorSize * (panelVoltage - self.lastPanelVoltage)**2) / dt
-        if panelVoltage < self.lastPanelVoltage: capPower = -1 * capPower
+        dV = panelVoltage - self.lastPanelVoltage
+        capPower = (0.5 * self.capacitorSize * (dV)**2) / dt
+        if dV < 0: capPower = -1 * capPower
         avgPanelPower = self.lastPower + capPower
 
         #Calculate panel irradiance based on its power output and panel voltage
-        avgPanelCurrent = avgPanelPower / avgCapVolts
-        irr = solarPanel.get_irradiance(avgPanelCurrent, avgCapVolts)  #returns an estimate for the panel irradiance.  Max is 1000 W/m^2
+        #avgPanelCurrent = avgPanelPower / panelVoltage #panelVoltage  # or avgCapVolts?  or lastPanelVolts?
+        avgPanelCurrent = self.capacitorSize * dV / dt
+        irr = solarPanel.get_irradiance(avgPanelCurrent, self.lastPanelVoltage)  #returns an estimate for the panel irradiance.  Max is 1000 W/m^2
         
         #Calculate the max power available, if panel was at MPP, given current irradiance:
         powerAvailable = solarPanel.Vmp * solarPanel.panel_output(solarPanel.Vmp, irr)
-        print("power available = " + str(powerAvailable) + "  /  irr = " + str(irr) + " / avgI = " + str(avgPanelCurrent) + " / avgPanelPower = " + str(avgPanelPower))
-        print("             capAmps " + str(capAmps) + " | capPower " + str(capPower))
+        print("power available = " + str(powerAvailable) + "  /  irr = " + str(irr) + " / avgI = " + str(avgPanelCurrent) + " / avgPanelPower = " + str(avgPanelPower) + " | capPower = " + str(capPower))
+        #print("             capAmps " + str(capAmps) + " | capPower " + str(capPower))
 
         #Update target power to equal the incoming panel power, adjusted for buffer decrement.  1.0 = MPPT.  < 1 gives a buffer to deal with reaction delays.
         self.target = powerAvailable * self.targetDecrement
