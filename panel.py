@@ -36,5 +36,7 @@ class panel:
     
     def get_irradiance(self, I, V):
         maxCurrent = self.panel_output(V, 1000) #what should the current be at that panel voltage IF the irradiance were perfect 1000
+        #print("maxCurrent = " + str(maxCurrent))
+        if maxCurrent == 0: irr=0
         irr = I / maxCurrent * 1000
         return irr

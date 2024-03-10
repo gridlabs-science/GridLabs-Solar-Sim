@@ -87,30 +87,66 @@ def stress_test(solarPanel, Bitaxe, dt, highIRR, lowIRR, segmentTime):
       
     # Based on the new irradiance, get the panel power output
     panelAmps = solarPanel.panel_output(voltage[i-1], irr)  #gets the current output (in amps)
-    print("panelAmps " + str(panelAmps))
-    panelPower[i] = panelAmps * voltage[i-1]
-    print("panelPower " + str(panelPower[i]))
+    #print("panelAmps " + str(panelAmps))
+    panelPower[i-1] = panelAmps * voltage[i-1]
+    #print("panelPower " + str(panelPower[i-1]))
 
     # Use Panel output and ASIC last power setting and dt to run the sim forward one step and get the new capacitor/panel voltage
     deltaWatts = panelPower[i-1] - ASICPower[i-1]  # Find the power delta between what the panel is producing and what the ASIC is pulling
-    print("deltaWatts " + str(deltaWatts))
+    #print("ASICPower[i] = " + str(ASICPower[i-1]))
+    #print("deltaWatts " + str(deltaWatts))
     energyChange = abs(deltaWatts * dt)
-    print("energyChange " + str(energyChange))
-    voltage[i] = voltage[i-1] + np.sign(deltaWatts)*math.sqrt(2*energyChange/Bitaxe.capacitorSize)
-    print("voltage[" + str(i) + "] " + str(voltage[i]))
+    #print("energyChange " + str(energyChange))
+    #voltage[i] = voltage[i-1] + np.sign(deltaWatts)*math.sqrt(2*energyChange/Bitaxe.capacitorSize)
+    #voltage[i] = math.sqrt(voltage[i-1]**2 - np.sign(deltaWatts)*2*energyChange/Bitaxe.capacitorSize)
+    voltage[i] = voltage[i-1] + (panelAmps - ASICPower[i-1]/voltage[i-1])/Bitaxe.capacitorSize * dt
+    #print("voltage[" + str(i) + "] " + str(voltage[i]))
+
+    # Now a small loop to shorten the time step and more accurately calculate the integral of the power flow into the capacitor, since the above calculation is mos def wronger.
+    v0 = voltage[i-1]
+    v1 = voltage[i]  # This is wrong, because we have assumed constant power output from the panel throughout the time step
+    dV = v1-v0
+    i0 = solarPanel.panel_output(v0, irr)  #starting panel current
+    i1 = solarPanel.panel_output(v1, irr)  #ending panel current.  This will get tweaked and adjusted as we run through smaller time steps.  
+    dI = i1-i0
+    dt = dt  #just repeated here for my sanity
+    p0 = v0 * i0 - ASICPower[i-1]
+    p1 = v1 * i1 - ASICPower[i-1]
+    # The first estimate for p1 is wrong, because v1 is wrong, because it assumes constant power from the panel.  So now we adjust...
+    while(True):
+      avgI = (i0+i1)/2  #panel voltage
+      avgV = (v0+v1)/2  #panel voltage
+      avgP = avgV*avgI - ASICPower[i-1]  #system power (panel power - ASIC power)
+      dE   = abs(avgP*dt)  # Energy change in joules
+      #NEWv1= v0 + np.sign(avgP)*math.sqrt(2*dE/Bitaxe.capacitorSize)  # The new guesstimate for v1, using average panel voltage and power output instead of starting power at v0
+      #NEWv1= math.sqrt(v0**2 - np.sign(avgP)*2*dE/Bitaxe.capacitorSize)
+      NEWv1 = v0 + (avgI - ASICPower[i-1]/voltage[i-1])/Bitaxe.capacitorSize * dt
+      if(abs(NEWv1 - v1) < 0.00001):                                     # Finally got close enough for government work, so continue
+        voltage[i] = NEWv1
+        panelAmps = solarPanel.panel_output(voltage[i], irr)  #gets the current output (in amps)
+        panelPower[i] = panelAmps * voltage[i]
+        break
+      else: 
+        v1=NEWv1   # Not close enough yet, so store the new guess as the new v1, then loop to generate a new set of averages
+    #print("NEW voltage[" + str(i) + "] " + str(voltage[i]))
+
     
     #voltage[i] = voltage[i - 1] - (-deltaWatts * dt) / (Bitaxe.capacitorSize * voltage[i - 1]) 
     #capPower = (0.5 * self.capacitorSize * (panelVoltage - self.lastPanelVoltage)**2) / dt
    
     # Now let the ASIC state machine update and calculate it's new power draw
+    if(voltage[i] <= Bitaxe.minVoltage): 
+      Bitaxe.brownout()  # If the voltage got too low, then cut power to the device and log it at a brownout.
+      voltage[i] = Bitaxe.minVoltage
     ASICPower[i] = Bitaxe.get_power(voltage[i], dt, solarPanel)
     if Bitaxe.state == 'running': ASICState[i] = 3
     if Bitaxe.state == 'curtailing': ASICState[i] = 2
     if Bitaxe.state == 'booting': ASICState[i] = 1
     if Bitaxe.state == 'curtailed': ASICState[i] = 0
+    if Bitaxe.state == 'crashed': ASICState[i] = -5
 
-    if ASICPower[i] > Bitaxe.maxPower: break
-    if i > 0.2/dt: break
+    #if ASICPower[i] > Bitaxe.maxPower: break
+    #if i > 17/dt: break
     #break
 
   return time, voltage, panelPower, ASICPower, ASICState
@@ -130,7 +166,7 @@ solarPanel = panel.panel(Voc=21.6, Vmp=18.0, Isc=6.12, Imp=5.6, maxPower=100.0) 
 
 # Create the load object
 # def __init__(self, pwrScaleUpSpeed, pwrScaleDownSpeed, curtailDelay, bootDelay, maxPower, minPower, capacitorSize, initialPanelVoltage, targetDecrement):
-Bitaxe = dynamicLoad.dynamicLoad(pwrScaleUpSpeed=1, pwrScaleDownSpeed=1, curtailDelay=1, bootDelay=60, maxPower=15, minPower=4, capacitorSize=1, initialPanelVoltage=solarPanel.Vmp, targetDecrement=0.9)
+Bitaxe = dynamicLoad.dynamicLoad(minVoltage=5, pwrScaleUpSpeed=1, pwrScaleDownSpeed=1, curtailDelay=10, bootDelay=10, maxPower=15, minPower=4, capacitorSize=18, initialPanelVoltage=solarPanel.Vmp, targetDecrement=0.9)
 
 # Calculate the panel's current/voltage curves
 powerCurve = np.zeros(int((solarPanel.Voc / 0.01) + 1))
@@ -142,12 +178,14 @@ for i, voltage in enumerate(np.arange(0, solarPanel.Voc + 0.0, 0.01)):
 
 # Run the short "stress test" of full on / full off power to observe basic system response
     # Simulation variables
-dt = 0.01  # Seconds per step in the simulation.  Adjust as needed for speed and accuracy
+dt = 0.1  # Seconds per step in the simulation.  Adjust as needed for speed and accuracy
     # Stress Test irradiance pattern.  It simply starts high for segmentTime, goes low for segmentTime, then back high for segmentTime
 highIRR = 1000   # Maximum irradiance, in watts / m^2
 lowIRR = 0     # Minimum irradiance (0 = total solar eclipse, 200 typical overcast day)
 segmentTime = 60   # amount of time to spend at lowIRR (in seconds)
 time, voltage, panelPower, ASICPower, ASICState = stress_test(solarPanel, Bitaxe, dt, highIRR, lowIRR, segmentTime)
+
+#exit()
 
 # Read in the real solar data and process into irradiance data
 data_file = str("data/West_roof.csv")  # Replace with the path to your CSV file

@@ -6,8 +6,9 @@ class dynamicLoad:
     #curtailDelay = 1 #in seconds.  The delay between being given the command to switch to standby/low power mode, and the time power use is actually reduced.
 
 
-    def __init__(self, pwrScaleUpSpeed, pwrScaleDownSpeed, curtailDelay, bootDelay, maxPower, minPower, capacitorSize, initialPanelVoltage, targetDecrement):
+    def __init__(self, minVoltage, pwrScaleUpSpeed, pwrScaleDownSpeed, curtailDelay, bootDelay, maxPower, minPower, capacitorSize, initialPanelVoltage, targetDecrement):
         #system constants
+        self.minVoltage = minVoltage
         self.pwrScaleUpSpeed = pwrScaleUpSpeed
         self.pwrScaleDownSpeed = pwrScaleDownSpeed
         self.curtailDelay = curtailDelay
@@ -24,6 +25,10 @@ class dynamicLoad:
         self.lastPanelVoltage = initialPanelVoltage
         #self.lastCapVoltage = initialCapVoltage
         self.lastPower = self.target
+
+    def brownout(self):
+        self.state = 'crashed'
+        self.lastPower = 0
         
 
     def get_power(self, panelVoltage, dt, solarPanel):
@@ -40,9 +45,14 @@ class dynamicLoad:
         avgPanelPower = self.lastPower + capPower
 
         #Calculate panel irradiance based on its power output and panel voltage
-        #avgPanelCurrent = avgPanelPower / panelVoltage #panelVoltage  # or avgCapVolts?  or lastPanelVolts?
-        avgPanelCurrent = self.capacitorSize * dV / dt
-        irr = solarPanel.get_irradiance(avgPanelCurrent, self.lastPanelVoltage)  #returns an estimate for the panel irradiance.  Max is 1000 W/m^2
+        #avgPanelCurrent = avgPanelPower / ((panelVoltage+self.lastPanelVoltage)/2) #panelVoltage  # or avgCapVolts?  or lastPanelVolts?
+        #avgPanelCurrent = avgPanelPower / panelVoltage
+        #avgPanelCurrent = avgPanelPower / self.lastPanelVoltage
+        #avgPanelCurrent = self.capacitorSize * dV / dt
+        avgPanelCurrent = self.capacitorSize * dV / dt + self.lastPower/panelVoltage
+        #irr = solarPanel.get_irradiance(avgPanelCurrent, (self.lastPanelVoltage+panelVoltage)/2)  #returns an estimate for the panel irradiance.  Max is 1000 W/m^2
+        irr = solarPanel.get_irradiance(avgPanelCurrent, panelVoltage)  #returns an estimate for the panel irradiance.  Max is 1000 W/m^2
+        irr = solarPanel.get_irradiance(avgPanelCurrent, self.lastPanelVoltage)
         
         #Calculate the max power available, if panel was at MPP, given current irradiance:
         powerAvailable = solarPanel.Vmp * solarPanel.panel_output(solarPanel.Vmp, irr)
@@ -66,7 +76,7 @@ class dynamicLoad:
                 self.bootTime = 0
                 self.state = 'running'
                 self.lastPower = self.minPower
-        elif self.state == 'curtailed':
+        elif self.state == 'curtailed' or self.state == 'crashed':
             if self.target > self.minPower and panelVoltage > solarPanel.Vmp:  #Panel is now producing more than min power. Wait until the capacitor is charged enough to push the panel to the right side of Vmp
                 self.state = 'booting'
                 self.bootTime = 0
