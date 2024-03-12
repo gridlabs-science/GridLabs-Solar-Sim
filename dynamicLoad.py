@@ -56,7 +56,7 @@ class dynamicLoad:
         
         #Calculate the max power available, if panel was at MPP, given current irradiance:
         powerAvailable = solarPanel.Vmp * solarPanel.panel_output(solarPanel.Vmp, irr)
-        print("power available = " + str(powerAvailable) + "  /  irr = " + str(irr) + " / avgI = " + str(avgPanelCurrent) + " / avgPanelPower = " + str(avgPanelPower) + " | capPower = " + str(capPower))
+        #print("power available = " + str(powerAvailable) + "  /  irr = " + str(irr) + " / avgI = " + str(avgPanelCurrent) + " / avgPanelPower = " + str(avgPanelPower) + " | capPower = " + str(capPower))
         #print("             capAmps " + str(capAmps) + " | capPower " + str(capPower))
 
         #Update target power to equal the incoming panel power, adjusted for buffer decrement.  1.0 = MPPT.  < 1 gives a buffer to deal with reaction delays.
