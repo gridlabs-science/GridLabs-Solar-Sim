@@ -5,6 +5,11 @@ import math
 import plotly.graph_objects as go  # Import Plotly's graph objects library
 from plotly.subplots import make_subplots
 
+import dash
+import dash_core_components as dcc
+import dash_html_components as html
+from dash.dependencies import Input, Output
+
 import panel
 import dynamicLoad
 
@@ -162,11 +167,12 @@ def stress_test(solarPanel, Bitaxe, dt, highIRR, lowIRR, segmentTime):
 
 # Solar Panel Electrical Characteristics 
 #solarPanel = panel.panel(Voc=49.6, Vmp=41.64, Isc=13.86, Imp=12.97, maxPower=540.0)   # My big panels
-solarPanel = panel.panel(Voc=21.6, Vmp=18.0, Isc=6.12, Imp=5.6, maxPower=100.0)    # Ben's small 100W one
+solarPanel = panel.panel(Voc=21.6, Vmp=18.0, Isc=220.32, Imp=201.6, maxPower=3600.0)    # Ben's small 100W one
 
 # Create the load object
 # def __init__(self, pwrScaleUpSpeed, pwrScaleDownSpeed, curtailDelay, bootDelay, maxPower, minPower, capacitorSize, initialPanelVoltage, targetDecrement):
-Bitaxe = dynamicLoad.dynamicLoad(minVoltage=5, pwrScaleUpSpeed=1, pwrScaleDownSpeed=1, curtailDelay=10, bootDelay=10, maxPower=15, minPower=4, capacitorSize=18, initialPanelVoltage=solarPanel.Vmp, targetDecrement=0.9)
+#pwrScaleSpeeds are in W/sec
+Bitaxe = dynamicLoad.dynamicLoad(minVoltage=11, pwrScaleUpSpeed=5, pwrScaleDownSpeed=5, curtailDelay=1, bootDelay=10, maxPower=3000, minPower=180, capacitorSize=180, initialPanelVoltage=solarPanel.Vmp, targetDecrement=0.9)
 
 # Calculate the panel's current/voltage curves
 powerCurve = np.zeros(int((solarPanel.Voc / 0.01) + 1))
@@ -182,7 +188,7 @@ dt = 0.1  # Seconds per step in the simulation.  Adjust as needed for speed and 
     # Stress Test irradiance pattern.  It simply starts high for segmentTime, goes low for segmentTime, then back high for segmentTime
 highIRR = 1000   # Maximum irradiance, in watts / m^2
 lowIRR = 0     # Minimum irradiance (0 = total solar eclipse, 200 typical overcast day)
-segmentTime = 60   # amount of time to spend at lowIRR (in seconds)
+segmentTime = 15   # amount of time to spend at lowIRR (in seconds)
 time, voltage, panelPower, ASICPower, ASICState = stress_test(solarPanel, Bitaxe, dt, highIRR, lowIRR, segmentTime)
 
 #exit()
@@ -221,3 +227,38 @@ fig.update_layout(
 
 # Display the interactive chart
 fig.show()
+
+app = dash.Dash(__name__)
+app.layout = html.Div([
+    dcc.Graph(id="interactive-plots", figure=fig)
+])
+
+# Callback function to update subplot based on hover data
+@app.callback(
+    Output("interactive-plots", "figure"),
+    Input("interactive-plots", "hoverData")
+)
+def update_figure(hover_data):
+    # Check if hover data is available
+    if hover_data is None:
+        return fig
+
+    # Extract hovered voltage value
+    hovered_voltage = hover_data["points"][0]["y"]
+
+    # Update figure with a vertical line in the top left plot
+    fig.update_traces(
+        selector={"type": "scatter", "row": 1, "col": 1},
+        x=[hovered_voltage] * len(powerCurve),
+        mode="lines",
+        line={"width": 2, "color": "red", "dash": "dash"}
+    )
+
+    # Clear temporary line on hover out (optional)
+    # fig.data[2]["x"] = []  # This line would clear the red line on hover out
+
+    return fig
+
+# Run the app
+if __name__ == "__main__":
+    app.run_server(debug=True)
