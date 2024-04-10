@@ -10,6 +10,8 @@ import dash_core_components as dcc
 import dash_html_components as html
 from dash.dependencies import Input, Output
 
+from textwrap import dedent as d
+
 import panel
 import dynamicLoad
 
@@ -209,6 +211,7 @@ fig = make_subplots(rows=2, cols=2, specs=[[{"secondary_y": True}, {"secondary_y
 
 # Add the trace for the capacitor voltage
 fig.add_trace(go.Scatter(x=processed_data['last_changed'], y=processed_data['state'], name="Real world irradiance data"), row=2, col=1)
+
 fig.add_trace(go.Scatter(x=time, y=voltage, name="Capacitor/Panel Voltage"), row=1, col=2, secondary_y=False)
 fig.add_trace(go.Scatter(x=time, y=panelPower, name="Solar Power"), row=1, col=2, secondary_y=True)
 fig.add_trace(go.Scatter(x=time, y=ASICPower, name="ASIC Power"), row=1, col=2, secondary_y=True)
@@ -226,11 +229,25 @@ fig.update_layout(
 )
 
 # Display the interactive chart
-fig.show()
+#fig.show()
 
 app = dash.Dash(__name__)
+styles = {
+    'pre': {
+        'border': 'thin lightgrey solid',
+        'overflowX': 'scroll'
+    }
+}
 app.layout = html.Div([
-    dcc.Graph(id="interactive-plots", figure=fig)
+    dcc.Graph(id="interactive-plots", figure=fig),
+    html.Div(className='row', children=[
+        html.Div([
+            dcc.Markdown(d("""
+              Click on points in the garph.
+            """)),
+            html.Pre(id='hover-data', style=styles['pre']),
+        ], className='three columns'),
+    ])
 ])
 
 # Callback function to update subplot based on hover data
@@ -261,4 +278,5 @@ def update_figure(hover_data):
 
 # Run the app
 if __name__ == "__main__":
-    app.run_server(debug=True)
+    app.run_server(port = 8070, dev_tools_ui=True,
+          dev_tools_hot_reload =True, threaded=True)
